@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jewelry Piece Manager</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f6f4f1; color: #241f1b;
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 22px 18px 70px; }
+  header h1 { margin: 0 0 2px; font-size: 23px; letter-spacing: -0.01em; }
+  header p { margin: 0 0 16px; color: #6c645c; font-size: 13px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 16px; }
+  .tab { padding: 9px 18px; border-radius: 10px 10px 0 0; border: 1px solid #e6e0d8; border-bottom: none;
+    background: #efe9e1; color: #6c645c; font-weight: 700; cursor: pointer; font-size: 14px; }
+  .tab.active { background: #fff; color: #a07d3f; }
+  .card { background: #fff; border: 1px solid #e6e0d8; border-radius: 14px;
+    padding: 18px 18px 6px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(0,0,0,.03); }
+  .card.chooser { padding-bottom: 18px; }
+  fieldset { border: none; margin: 0 0 6px; padding: 0; }
+  legend { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #a07d3f; padding: 0 0 8px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+  .grid .full { grid-column: 1 / -1; }
+  @media (max-width: 620px) { .grid { grid-template-columns: 1fr; } }
+  label { display: block; font-size: 12.5px; font-weight: 600; color: #4a423b; margin-bottom: 4px; }
+  label .req { color: #c0392b; }
+  input[type=text], input[type=date], input[type=number], select, textarea {
+    width: 100%; padding: 8px 10px; font-size: 14px; color: #241f1b;
+    background: #fdfcfb; border: 1px solid #d8d0c6; border-radius: 9px; font-family: inherit; }
+  textarea { resize: vertical; min-height: 46px; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: #a07d3f; box-shadow: 0 0 0 3px rgba(160,125,63,.15); }
+  .check { display: flex; align-items: center; gap: 8px; margin-top: 22px; }
+  .check input { width: 17px; height: 17px; }
+  .check label { margin: 0; }
+  .hint { font-size: 11.5px; color: #8a8078; margin-top: 3px; }
+  .actions { display: flex; gap: 10px; align-items: center; margin: 6px 2px 2px; }
+  button { font: inherit; font-weight: 600; border-radius: 10px; border: 1px solid transparent; padding: 10px 18px; cursor: pointer; }
+  .primary { background: #a07d3f; color: #fff; }
+  .primary:hover { background: #8a6a33; }
+  .primary:disabled { opacity: .5; cursor: default; }
+  .ghost { background: #fff; border-color: #d8d0c6; color: #4a423b; }
+  .ghost:hover { background: #f3efe9; }
+  #status { min-height: 20px; font-size: 13.5px; font-weight: 600; }
+  #status.ok { color: #2e7d32; }
+  #status.err { color: #c0392b; }
+  #fields.locked { opacity: .45; pointer-events: none; }
+  .session { margin-top: 8px; }
+  .session h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: #6c645c; margin: 0 0 8px; }
+  .chip { display: flex; justify-content: space-between; gap: 10px; padding: 8px 12px;
+    background: #fbf8f3; border: 1px solid #eee6d9; border-radius: 9px; margin-bottom: 6px; font-size: 13px; }
+  .chip b { color: #a07d3f; }
+  .muted { color: #8a8078; }
+  .banner { background: #fdecea; border: 1px solid #f3b7b0; color: #86271c; padding: 10px 12px; border-radius: 10px; font-size: 13px; margin-bottom: 14px; display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Jewelry Piece Manager</h1>
+    <p>Add new pieces or edit existing ones in the “Jewelry Tracking” database. Sold status and proceeds are calculated from sales, so they aren’t here.</p>
+  </header>
+
+  <div id="err" class="banner"></div>
+
+  <div class="tabs">
+    <div class="tab active" id="tab-add" data-mode="add">Add piece</div>
+    <div class="tab" id="tab-edit" data-mode="edit">Edit piece</div>
+  </div>
+
+  <div class="card chooser" id="chooserCard" style="display:none">
+    <label for="picker">Piece to edit</label>
+    <select id="picker"><option value="">Loading pieces…</option></select>
+    <div class="hint">Pick a SKU to load its current details.</div>
+  </div>
+
+  <form id="form" autocomplete="off">
+    <div id="fields">
+    <div class="card">
+      <fieldset><legend>Identity</legend>
+        <div class="grid">
+          <div><label for="item_type_code">Item type <span class="req">*</span></label><select id="item_type_code"></select></div>
+          <div><label for="sku">SKU <span class="req">*</span></label><input type="text" id="sku" placeholder="BR-049"><div class="hint" id="sku_hint">Auto-suggested as the next number for the type.</div></div>
+          <div><label for="date_cataloged">Date cataloged</label><input type="date" id="date_cataloged"></div>
+          <div><label for="original_ref">Original ref / bag #</label><input type="text" id="original_ref"></div>
+        </div>
+      </fieldset>
+    </div>
+    <div class="card">
+      <fieldset><legend>Description &amp; materials</legend>
+        <div class="grid">
+          <div class="full"><label for="description">Description</label><textarea id="description"></textarea></div>
+          <div class="full"><label for="primary_materials">Primary materials</label><textarea id="primary_materials"></textarea></div>
+          <div><label for="size_length">Size / length</label><input type="text" id="size_length" placeholder="~7.5in"></div>
+        </div>
+      </fieldset>
+    </div>
+    <div class="card">
+      <fieldset><legend>Provenance &amp; grading</legend>
+        <div class="grid">
+          <div><label for="maker_id">Maker</label><select id="maker_id"></select></div>
+          <div><label for="tier_code">Tier</label><select id="tier_code"></select></div>
+        </div>
+      </fieldset>
+    </div>
+    <div class="card">
+      <fieldset><legend>Condition</legend>
+        <div class="grid">
+          <div><label for="condition">Condition</label><select id="condition"></select></div>
+          <div class="check"><input type="checkbox" id="repair_needed"><label for="repair_needed">Repair needed</label></div>
+          <div class="full"><label for="condition_detail">Condition detail</label><textarea id="condition_detail"></textarea></div>
+          <div class="full"><label for="repair_check_detail">Repair / check detail</label><textarea id="repair_check_detail"></textarea></div>
+        </div>
+      </fieldset>
+    </div>
+    <div class="card">
+      <fieldset><legend>Pricing &amp; listing</legend>
+        <div class="grid">
+          <div><label for="existing_tag_price">Existing tag price ($)</label><input type="number" id="existing_tag_price" step="0.01" min="0"></div>
+          <div><label for="asking_price">Asking price ($)</label><input type="number" id="asking_price" step="0.01" min="0"></div>
+          <div><label for="listing_status">Listing status</label><select id="listing_status"></select></div>
+          <div class="check"><input type="checkbox" id="photo_taken"><label for="photo_taken">Photo taken</label></div>
+          <div class="full"><label for="photos">Photo file names</label><textarea id="photos" placeholder="One per line, e.g. IMG_2444.HEIC"></textarea><div class="hint" id="photo_hint">Each becomes a linked photo record.</div></div>
+        </div>
+      </fieldset>
+    </div>
+    <div class="card">
+      <fieldset><legend>Research notes</legend>
+        <div class="grid">
+          <div class="full"><label for="verification_note">Verification needed</label><textarea id="verification_note"></textarea></div>
+          <div class="full"><label for="group_lot_note">Group / lot note</label><textarea id="group_lot_note"></textarea></div>
+          <div class="full"><label for="notes">Notes</label><textarea id="notes"></textarea></div>
+          <div><label for="source">Source</label><input type="text" id="source"></div>
+        </div>
+      </fieldset>
+    </div>
+    <div class="card" id="followupCard">
+      <fieldset><legend>Open question (optional)</legend>
+        <div class="grid">
+          <div class="full"><label for="followup_q">Open question / verification</label><input type="text" id="followup_q" placeholder="Adds a row to your follow-up list"></div>
+          <div class="full"><label for="followup_w">Why it matters</label><input type="text" id="followup_w"></div>
+        </div>
+      </fieldset>
+    </div>
+    </div>
+
+    <div class="actions">
+      <button type="submit" class="primary" id="save">Save new piece</button>
+      <button type="button" class="ghost" id="secondary">Clear</button>
+      <span id="status"></span>
+    </div>
+  </form>
+
+  <div class="card session" id="sessionCard" style="display:none">
+    <h2 id="sessionTitle">This session</h2>
+    <div id="sessionList"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var BASE = "https://wrhogwcpzlakobovqnwm.supabase.co/rest/v1";
+  var KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndyaG9nd2Nwemxha29ib3ZxbndtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ4OTc0OTMsImV4cCI6MjEwMDQ3MzQ5M30.9l2BPpkgZM58AJZS-SzhinHXRyragN504f-TGRsAuUo";
+
+  var ITEM_TYPES = [["BR","Bracelet"],["NK","Necklace"],["PN","Pendant"],["ST","Set"],["ER","Earrings"],["RG","Ring"],["BO","Brooch"],["AN","Anklet"],["OT","Other"]];
+  var MAKERS = [["","—"],["1","Sally (handmade)"],["2","Bulk buyout"],["3","Unknown"]];
+  var TIERS = [["","—"],["A","A – Basic"],["B","B – Mid"],["C","C – Standout"]];
+  var CONDITIONS = ["","Poor","Fair","Good","Very Good","Excellent","Needs Repair"];
+  var STATUSES = ["Not Listed","Draft","Listed","Reserved","Sold"];
+  var TEXT = ["description","primary_materials","size_length","condition_detail","repair_check_detail","verification_note","group_lot_note","notes","source","original_ref"];
+  var maxMap = { BR:48, NK:12, PN:19, ST:4, ER:0, RG:0, BO:0, AN:0, OT:0 };
+
+  var mode = "add", currentId = null, currentRow = null, skuManual = false;
+  var $ = function (id) { return document.getElementById(id); };
+
+  function opt(sel, pairs, isPair) {
+    sel.innerHTML = "";
+    pairs.forEach(function (p) {
+      var o = document.createElement("option");
+      if (isPair) { o.value = p[0]; o.textContent = p[1]; } else { o.value = p; o.textContent = p === "" ? "—" : p; }
+      sel.appendChild(o);
+    });
+  }
+  opt($("item_type_code"), ITEM_TYPES, true);
+  opt($("maker_id"), MAKERS, true);
+  opt($("tier_code"), TIERS, true);
+  opt($("condition"), CONDITIONS, false);
+  opt($("listing_status"), STATUSES, false);
+
+  function hdr(extra) { return Object.assign({ apikey: KEY, Authorization: "Bearer " + KEY, "Content-Type": "application/json" }, extra || {}); }
+  async function api(path, opts) {
+    var r = await fetch(BASE + path, opts || {});
+    var txt = await r.text();
+    if (!r.ok) {
+      var msg = txt;
+      try { var j = JSON.parse(txt); msg = j.message || j.hint || txt; } catch (e) {}
+      if (r.status === 401 || r.status === 403 || /permission denied|row-level security/i.test(msg)) {
+        showErr("The database is refusing writes for this key. Run the one-time access SQL (in the folder’s guide) in Supabase’s SQL Editor, then reload this page.");
+      }
+      throw new Error(msg || ("HTTP " + r.status));
+    }
+    return txt ? JSON.parse(txt) : [];
+  }
+  function showErr(m) { var b = $("err"); b.textContent = m; b.style.display = ""; }
+
+  function v(id) { return $(id).value.trim(); }
+  function numOrNull(id) { var s = $(id).value.trim(); if (s === "") return null; var n = Number(s); return isNaN(n) ? null : n; }
+  function pad(n) { return String(n).padStart(3, "0"); }
+  function suggestSku() { if (mode !== "add" || skuManual) return; var t = $("item_type_code").value; $("sku").value = t + "-" + pad((maxMap[t] || 0) + 1); }
+
+  function fieldObj() {
+    var o = {
+      sku: v("sku"),
+      date_cataloged: v("date_cataloged") || null,
+      item_type_code: $("item_type_code").value,
+      maker_id: $("maker_id").value ? Number($("maker_id").value) : null,
+      tier_code: $("tier_code").value || null,
+      condition: $("condition").value || null,
+      repair_needed: $("repair_needed").checked,
+      existing_tag_price: numOrNull("existing_tag_price"),
+      asking_price: numOrNull("asking_price"),
+      photo_taken: $("photo_taken").checked,
+      listing_status: $("listing_status").value || "Not Listed"
+    };
+    TEXT.forEach(function (f) { o[f] = v(f) || null; });
+    return o;
+  }
+  function photoList() { return ($("photos").value || "").split(/[\n,]+/).map(function (s) { return s.trim(); }).filter(Boolean); }
+
+  async function doAdd() {
+    var rows = await api("/piece", { method: "POST", headers: hdr({ Prefer: "return=representation" }), body: JSON.stringify(fieldObj()) });
+    var id = rows[0].id, sku = rows[0].sku;
+    var ph = photoList();
+    if (ph.length) await api("/piece_photo", { method: "POST", headers: hdr(), body: JSON.stringify(ph.map(function (fn, i) { return { piece_id: id, file_name: fn, sort_order: i + 1 }; })) });
+    var fq = v("followup_q");
+    if (fq) await api("/follow_up", { method: "POST", headers: hdr(), body: JSON.stringify({ piece_id: id, open_question: fq, why_it_matters: v("followup_w") || null }) });
+    var m = /^([A-Z]{2})-(\d+)/.exec(sku); if (m) maxMap[m[1]] = Math.max(maxMap[m[1]] || 0, parseInt(m[2], 10));
+    return sku;
+  }
+  async function doUpdate() {
+    var id = currentId;
+    var rows = await api("/piece?id=eq." + id, { method: "PATCH", headers: hdr({ Prefer: "return=representation" }), body: JSON.stringify(fieldObj()) });
+    var sku = (rows[0] && rows[0].sku) || v("sku");
+    await api("/piece_photo?piece_id=eq." + id, { method: "DELETE", headers: hdr() });
+    var ph = photoList();
+    if (ph.length) await api("/piece_photo", { method: "POST", headers: hdr(), body: JSON.stringify(ph.map(function (fn, i) { return { piece_id: id, file_name: fn, sort_order: i + 1 }; })) });
+    return sku;
+  }
+
+  function setStatus(m, k) { var s = $("status"); s.textContent = m; s.className = k || ""; }
+  function fillBlank() {
+    ["sku"].concat(TEXT).forEach(function (f) { $(f).value = ""; });
+    $("date_cataloged").value = new Date().toISOString().slice(0, 10);
+    $("item_type_code").value = "BR"; $("maker_id").value = ""; $("tier_code").value = "";
+    $("condition").value = ""; $("listing_status").value = "Not Listed";
+    $("repair_needed").checked = false; $("photo_taken").checked = false;
+    $("existing_tag_price").value = ""; $("asking_price").value = "";
+    $("photos").value = ""; $("followup_q").value = ""; $("followup_w").value = "";
+  }
+  function fill(row) {
+    currentRow = row; currentId = row.id;
+    TEXT.forEach(function (f) { $(f).value = (row[f] == null ? "" : row[f]); });
+    $("sku").value = row.sku || "";
+    $("date_cataloged").value = row.date_cataloged || "";
+    $("item_type_code").value = row.item_type_code || "BR";
+    $("maker_id").value = (row.maker_id == null ? "" : String(row.maker_id));
+    $("tier_code").value = row.tier_code || "";
+    $("condition").value = row.condition || "";
+    $("listing_status").value = row.listing_status || "Not Listed";
+    $("repair_needed").checked = row.repair_needed === true;
+    $("photo_taken").checked = row.photo_taken === true;
+    $("existing_tag_price").value = (row.existing_tag_price == null ? "" : row.existing_tag_price);
+    $("asking_price").value = (row.asking_price == null ? "" : row.asking_price);
+    var ph = (row.piece_photo || []).slice().sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0); });
+    $("photos").value = ph.map(function (p) { return p.file_name; }).join("\n");
+    $("fields").classList.remove("locked");
+    $("save").disabled = false;
+  }
+
+  async function loadList() {
+    try {
+      var rows = await api("/piece?select=id,sku,description&order=sku.asc", { headers: hdr() });
+      var sel = $("picker"); sel.innerHTML = "<option value=''>— choose a piece —</option>";
+      rows.forEach(function (r) { var o = document.createElement("option"); o.value = r.id; o.textContent = r.sku + " — " + String(r.description || "").slice(0, 50); sel.appendChild(o); });
+    } catch (e) { $("picker").innerHTML = "<option>Couldn’t load pieces</option>"; }
+  }
+  async function loadPiece(id) {
+    setStatus("Loading…", "");
+    try {
+      var rows = await api("/piece?id=eq." + id + "&select=*,piece_photo(file_name,sort_order)", { headers: hdr() });
+      if (!rows.length) { setStatus("Piece not found.", "err"); return; }
+      fill(rows[0]); setStatus("", "");
+    } catch (e) { setStatus("Couldn’t load: " + String(e.message || e).slice(0, 180), "err"); }
+  }
+  async function loadMax() {
+    try {
+      var rows = await api("/piece?select=item_type_code,sku", { headers: hdr() });
+      var m = {};
+      rows.forEach(function (r) { var x = /-(\d+)/.exec(r.sku || ""); if (x) { var n = parseInt(x[1], 10); if (!m[r.item_type_code] || n > m[r.item_type_code]) m[r.item_type_code] = n; } });
+      Object.keys(m).forEach(function (k) { maxMap[k] = m[k]; });
+      suggestSku();
+    } catch (e) {}
+  }
+
+  function addChip(sku, verb) {
+    $("sessionCard").style.display = "";
+    var d = document.createElement("div"); d.className = "chip";
+    d.innerHTML = "<span><b>" + sku + "</b> <span class='muted'>" + verb + "</span></span><span class='muted'>" +
+      new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + "</span>";
+    $("sessionList").insertBefore(d, $("sessionList").firstChild);
+  }
+  function friendly(m) {
+    if (/duplicate key|already exists|unique/i.test(m)) return "That SKU already exists — pick another number.";
+    if (/permission denied|row-level security|401|403/i.test(m)) return "Database refused the write — see the red note above.";
+    return "Couldn’t save: " + String(m).slice(0, 160);
+  }
+
+  function setMode(next) {
+    mode = next;
+    $("tab-add").classList.toggle("active", next === "add");
+    $("tab-edit").classList.toggle("active", next === "edit");
+    $("chooserCard").style.display = next === "edit" ? "" : "none";
+    $("followupCard").style.display = next === "add" ? "" : "none";
+    $("sku_hint").textContent = next === "add" ? "Auto-suggested as the next number for the type." : "Editable, but must stay unique.";
+    $("photo_hint").textContent = next === "add" ? "Each becomes a linked photo record." : "Saving replaces the piece’s photo list with exactly what’s here.";
+    $("save").textContent = next === "add" ? "Save new piece" : "Save changes";
+    $("secondary").textContent = next === "add" ? "Clear" : "Revert";
+    setStatus("", "");
+    currentId = null; currentRow = null;
+    if (next === "add") { skuManual = false; fillBlank(); suggestSku(); $("fields").classList.remove("locked"); $("save").disabled = false; }
+    else { fillBlank(); $("fields").classList.add("locked"); $("save").disabled = true; $("picker").value = ""; if ($("picker").options.length <= 1) loadList(); }
+  }
+
+  $("tab-add").addEventListener("click", function () { setMode("add"); });
+  $("tab-edit").addEventListener("click", function () { setMode("edit"); });
+  $("item_type_code").addEventListener("change", function () { if (mode === "add") { skuManual = false; suggestSku(); } });
+  $("sku").addEventListener("input", function () { skuManual = true; });
+  $("picker").addEventListener("change", function () { if (this.value) { $("fields").classList.remove("locked"); loadPiece(this.value); } else { $("fields").classList.add("locked"); $("save").disabled = true; } });
+  $("secondary").addEventListener("click", function () {
+    if (mode === "add") { skuManual = false; fillBlank(); suggestSku(); setStatus("", ""); }
+    else if (currentRow) { fill(currentRow); setStatus("Reverted to saved values.", ""); }
+  });
+
+  $("form").addEventListener("submit", async function (e) {
+    e.preventDefault();
+    if (!$("item_type_code").value) { setStatus("Item type is required.", "err"); return; }
+    if (!v("sku")) { setStatus("SKU is required.", "err"); return; }
+    if (mode === "edit" && !currentId) { setStatus("Choose a piece first.", "err"); return; }
+    $("save").disabled = true; setStatus("Saving…", "");
+    try {
+      if (mode === "add") {
+        var s1 = await doAdd(); addChip(s1, "added"); skuManual = false; fillBlank(); suggestSku(); setStatus("Saved " + s1 + " ✓", "ok");
+      } else {
+        var s2 = await doUpdate(); addChip(s2, "updated");
+        var o = $("picker").querySelector('option[value="' + currentId + '"]'); if (o) o.textContent = s2 + " — " + (v("description") || "").slice(0, 50);
+        await loadPiece(currentId); setStatus("Saved " + s2 + " ✓", "ok");
+      }
+    } catch (err) { setStatus(friendly(String(err.message || err)), "err"); }
+    finally { $("save").disabled = false; }
+  });
+
+  // init
+  fillBlank();
+  setMode("add");
+  loadMax();
+})();
+</script>
+</body>
+</html>
