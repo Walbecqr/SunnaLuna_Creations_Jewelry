@@ -53,7 +53,18 @@
   .chip b { color: #a07d3f; }
   .muted { color: #8a8078; }
   .banner { background: #fdecea; border: 1px solid #f3b7b0; color: #86271c; padding: 10px 12px; border-radius: 10px; font-size: 13px; margin-bottom: 14px; display: none; }
+  .uploader { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .uploader input[type=file] { font-size: 13px; max-width: 100%; }
+  .gallery { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+  .thumb { position: relative; width: 108px; }
+  .thumb img { width: 108px; height: 108px; object-fit: cover; border-radius: 10px; border: 1px solid #d8d0c6; display: block; background: #f3efe9; }
+  .thumb video.vid { width: 108px; height: 108px; object-fit: cover; border-radius: 10px; border: 1px solid #d8d0c6; display: block; background: #000; }
+  .thumb .ph { display: flex; align-items: center; justify-content: center; text-align: center; padding: 6px; font-size: 10.5px; color: #8a8078; background: #faf7f2; border: 1px dashed #d8c9ad; border-radius: 10px; width: 108px; height: 108px; overflow: hidden; word-break: break-all; }
+  .thumb .cap { font-size: 10px; color: #8a8078; margin-top: 3px; word-break: break-all; text-align: center; }
+  .thumb .rm { position: absolute; top: -8px; right: -8px; width: 22px; height: 22px; border-radius: 50%; background: #c0392b; color: #fff; border: 2px solid #fff; font-size: 13px; line-height: 1; cursor: pointer; padding: 0; }
+  .gallery:empty::after { content: "No photos yet."; color: #a89f95; font-size: 12.5px; }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -121,7 +132,14 @@
           <div><label for="asking_price">Asking price ($)</label><input type="number" id="asking_price" step="0.01" min="0"></div>
           <div><label for="listing_status">Listing status</label><select id="listing_status"></select></div>
           <div class="check"><input type="checkbox" id="photo_taken"><label for="photo_taken">Photo taken</label></div>
-          <div class="full"><label for="photos">Photo file names</label><textarea id="photos" placeholder="One per line, e.g. IMG_2444.HEIC"></textarea><div class="hint" id="photo_hint">Each becomes a linked photo record.</div></div>
+          <div class="full">
+            <label>Photos</label>
+            <div class="uploader">
+              <input type="file" id="photo_input" accept="image/*,.heic,.heif,video/mp4,.mp4,video/quicktime,.mov" multiple>
+              <span class="hint" id="photo_hint">Attach photos (JPG, PNG, HEIC) or videos (MP4/MOV) — shown below.</span>
+            </div>
+            <div class="gallery" id="gallery"></div>
+          </div>
         </div>
       </fieldset>
     </div>
@@ -160,7 +178,10 @@
 
 <script>
 (function () {
-  var BASE = "https://wrhogwcpzlakobovqnwm.supabase.co/rest/v1";
+  var SUP = "https://wrhogwcpzlakobovqnwm.supabase.co";
+  var BASE = SUP + "/rest/v1";
+  var STORAGE = SUP + "/storage/v1";
+  var BUCKET = "piece-media";
   var KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndyaG9nd2Nwemxha29ib3ZxbndtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ4OTc0OTMsImV4cCI6MjEwMDQ3MzQ5M30.9l2BPpkgZM58AJZS-SzhinHXRyragN504f-TGRsAuUo";
 
   var ITEM_TYPES = [["BR","Bracelet"],["NK","Necklace"],["PN","Pendant"],["ST","Set"],["ER","Earrings"],["RG","Ring"],["BO","Brooch"],["AN","Anklet"],["OT","Other"]];
@@ -226,13 +247,84 @@
     TEXT.forEach(function (f) { o[f] = v(f) || null; });
     return o;
   }
-  function photoList() { return ($("photos").value || "").split(/[\n,]+/).map(function (s) { return s.trim(); }).filter(Boolean); }
+  var gallery = []; // [{ file_name, data_url }]
+  function publicUrl(path) { return STORAGE + "/object/public/" + BUCKET + "/" + path; }
+  function renderGallery() {
+    var g = $("gallery"); g.innerHTML = "";
+    gallery.forEach(function (p, idx) {
+      var d = document.createElement("div"); d.className = "thumb";
+      if (p.media_kind === "video" && p.storage_path) {
+        var vd = document.createElement("video"); vd.src = publicUrl(p.storage_path); vd.controls = true; vd.preload = "metadata"; vd.className = "vid"; d.appendChild(vd);
+      } else if (p.data_url) {
+        var im = document.createElement("img"); im.src = p.data_url; im.alt = p.file_name || ""; d.appendChild(im);
+      } else {
+        var box = document.createElement("div"); box.className = "ph"; box.textContent = (p.file_name || "photo") + (p.media_kind === "video" ? " (video)" : ""); d.appendChild(box);
+      }
+      var cap = document.createElement("div"); cap.className = "cap"; cap.textContent = p.file_name || ""; d.appendChild(cap);
+      var x = document.createElement("button"); x.type = "button"; x.className = "rm"; x.textContent = "×"; x.title = "Remove";
+      x.onclick = function () { gallery.splice(idx, 1); renderGallery(); }; d.appendChild(x);
+      g.appendChild(d);
+    });
+  }
+  function downscale(file) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () {
+        var max = 1400, w = img.width, h = img.height;
+        if (w > max || h > max) { if (w >= h) { h = Math.round(h * max / w); w = max; } else { w = Math.round(w * max / h); h = max; } }
+        var c = document.createElement("canvas"); c.width = w; c.height = h;
+        c.getContext("2d").drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(url);
+        try { resolve(c.toDataURL("image/jpeg", 0.82)); } catch (e) { reject(e); }
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error("unreadable")); };
+      img.src = url;
+    });
+  }
+  function isHeic(f) { return /heic|heif/i.test(f.type) || /\.hei[cf]$/i.test(f.name); }
+  function isVideo(f) { return /^video\//i.test(f.type) || /\.(mp4|mov|m4v)$/i.test(f.name); }
+  function safeName(n) { return (n || "file").replace(/[^A-Za-z0-9._-]/g, "_"); }
+  async function uploadToStorage(file, path) {
+    var r = await fetch(STORAGE + "/object/" + BUCKET + "/" + encodeURI(path), {
+      method: "POST",
+      headers: { apikey: KEY, Authorization: "Bearer " + KEY, "x-upsert": "true", "Content-Type": file.type || "application/octet-stream" },
+      body: file
+    });
+    if (!r.ok) {
+      var t = await r.text();
+      if (/bucket not found/i.test(t) || r.status === 404) showErr("Video storage isn’t set up yet — run enable_media_storage.sql in Supabase’s SQL Editor, then reload this page.");
+      else if (r.status === 401 || r.status === 403) showErr("Storage refused the upload — run enable_media_storage.sql in Supabase’s SQL Editor, then reload.");
+      throw new Error(t || ("HTTP " + r.status));
+    }
+    return path;
+  }
+  async function handleFiles(files) {
+    for (var i = 0; i < files.length; i++) {
+      var f = files[i];
+      try {
+        if (isVideo(f)) {
+          setStatus("Uploading video “" + f.name + "”…", "");
+          var vpath = "uploads/" + Date.now() + "-" + Math.random().toString(36).slice(2) + "-" + safeName(f.name);
+          await uploadToStorage(f, vpath);
+          gallery.push({ file_name: f.name, media_kind: "video", data_url: null, storage_path: vpath });
+          renderGallery(); setStatus("", "");
+        } else {
+          var src = f;
+          if (isHeic(f)) { setStatus("Converting “" + f.name + "”…", ""); var out = await heic2any({ blob: f, toType: "image/jpeg", quality: 0.9 }); src = Array.isArray(out) ? out[0] : out; }
+          var url = await downscale(src);
+          gallery.push({ file_name: f.name, media_kind: "image", data_url: url, storage_path: null });
+          renderGallery(); setStatus("", "");
+        }
+      } catch (e) { setStatus("Couldn’t add “" + f.name + "”: " + String(e.message || e).slice(0, 120), "err"); }
+    }
+  }
+  function photoRows(id) { return gallery.map(function (p, i) { return { piece_id: id, file_name: p.file_name || null, sort_order: i + 1, data_url: p.data_url || null, media_kind: p.media_kind || "image", storage_path: p.storage_path || null }; }); }
 
   async function doAdd() {
     var rows = await api("/piece", { method: "POST", headers: hdr({ Prefer: "return=representation" }), body: JSON.stringify(fieldObj()) });
     var id = rows[0].id, sku = rows[0].sku;
-    var ph = photoList();
-    if (ph.length) await api("/piece_photo", { method: "POST", headers: hdr(), body: JSON.stringify(ph.map(function (fn, i) { return { piece_id: id, file_name: fn, sort_order: i + 1 }; })) });
+    if (gallery.length) await api("/piece_photo", { method: "POST", headers: hdr(), body: JSON.stringify(photoRows(id)) });
     var fq = v("followup_q");
     if (fq) await api("/follow_up", { method: "POST", headers: hdr(), body: JSON.stringify({ piece_id: id, open_question: fq, why_it_matters: v("followup_w") || null }) });
     var m = /^([A-Z]{2})-(\d+)/.exec(sku); if (m) maxMap[m[1]] = Math.max(maxMap[m[1]] || 0, parseInt(m[2], 10));
@@ -243,8 +335,7 @@
     var rows = await api("/piece?id=eq." + id, { method: "PATCH", headers: hdr({ Prefer: "return=representation" }), body: JSON.stringify(fieldObj()) });
     var sku = (rows[0] && rows[0].sku) || v("sku");
     await api("/piece_photo?piece_id=eq." + id, { method: "DELETE", headers: hdr() });
-    var ph = photoList();
-    if (ph.length) await api("/piece_photo", { method: "POST", headers: hdr(), body: JSON.stringify(ph.map(function (fn, i) { return { piece_id: id, file_name: fn, sort_order: i + 1 }; })) });
+    if (gallery.length) await api("/piece_photo", { method: "POST", headers: hdr(), body: JSON.stringify(photoRows(id)) });
     return sku;
   }
 
@@ -256,7 +347,7 @@
     $("condition").value = ""; $("listing_status").value = "Not Listed";
     $("repair_needed").checked = false; $("photo_taken").checked = false;
     $("existing_tag_price").value = ""; $("asking_price").value = "";
-    $("photos").value = ""; $("followup_q").value = ""; $("followup_w").value = "";
+    gallery = []; renderGallery(); $("followup_q").value = ""; $("followup_w").value = "";
   }
   function fill(row) {
     currentRow = row; currentId = row.id;
@@ -272,8 +363,9 @@
     $("photo_taken").checked = row.photo_taken === true;
     $("existing_tag_price").value = (row.existing_tag_price == null ? "" : row.existing_tag_price);
     $("asking_price").value = (row.asking_price == null ? "" : row.asking_price);
-    var ph = (row.piece_photo || []).slice().sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0); });
-    $("photos").value = ph.map(function (p) { return p.file_name; }).join("\n");
+    gallery = (row.piece_photo || []).slice().sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0); })
+      .map(function (p) { return { file_name: p.file_name, data_url: p.data_url || null, media_kind: p.media_kind || "image", storage_path: p.storage_path || null }; });
+    renderGallery();
     $("fields").classList.remove("locked");
     $("save").disabled = false;
   }
@@ -288,7 +380,7 @@
   async function loadPiece(id) {
     setStatus("Loading…", "");
     try {
-      var rows = await api("/piece?id=eq." + id + "&select=*,piece_photo(file_name,sort_order)", { headers: hdr() });
+      var rows = await api("/piece?id=eq." + id + "&select=*,piece_photo(file_name,sort_order,data_url,media_kind,storage_path)", { headers: hdr() });
       if (!rows.length) { setStatus("Piece not found.", "err"); return; }
       fill(rows[0]); setStatus("", "");
     } catch (e) { setStatus("Couldn’t load: " + String(e.message || e).slice(0, 180), "err"); }
@@ -323,7 +415,7 @@
     $("chooserCard").style.display = next === "edit" ? "" : "none";
     $("followupCard").style.display = next === "add" ? "" : "none";
     $("sku_hint").textContent = next === "add" ? "Auto-suggested as the next number for the type." : "Editable, but must stay unique.";
-    $("photo_hint").textContent = next === "add" ? "Each becomes a linked photo record." : "Saving replaces the piece’s photo list with exactly what’s here.";
+    $("photo_hint").textContent = next === "add" ? "Attach photos (JPG/PNG/HEIC) or videos (MP4/MOV)." : "Attach adds media; × removes it. Saving stores exactly what’s shown.";
     $("save").textContent = next === "add" ? "Save new piece" : "Save changes";
     $("secondary").textContent = next === "add" ? "Clear" : "Revert";
     setStatus("", "");
@@ -336,6 +428,7 @@
   $("tab-edit").addEventListener("click", function () { setMode("edit"); });
   $("item_type_code").addEventListener("change", function () { if (mode === "add") { skuManual = false; suggestSku(); } });
   $("sku").addEventListener("input", function () { skuManual = true; });
+  $("photo_input").addEventListener("change", function () { handleFiles(this.files); this.value = ""; });
   $("picker").addEventListener("change", function () { if (this.value) { $("fields").classList.remove("locked"); loadPiece(this.value); } else { $("fields").classList.add("locked"); $("save").disabled = true; } });
   $("secondary").addEventListener("click", function () {
     if (mode === "add") { skuManual = false; fillBlank(); suggestSku(); setStatus("", ""); }
