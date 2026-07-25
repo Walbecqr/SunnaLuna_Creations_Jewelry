@@ -65,6 +65,7 @@
   .gallery:empty::after { content: "No photos yet."; color: #a89f95; font-size: 12.5px; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
+<script>if (typeof heic2any === "undefined") { var s = document.createElement("script"); s.src = "https://unpkg.com/heic2any@0.0.4/dist/heic2any.min.js"; document.head.appendChild(s); }</script>
 </head>
 <body>
 <div class="wrap">
@@ -311,7 +312,12 @@
           renderGallery(); setStatus("", "");
         } else {
           var src = f;
-          if (isHeic(f)) { setStatus("Converting “" + f.name + "”…", ""); var out = await heic2any({ blob: f, toType: "image/jpeg", quality: 0.9 }); src = Array.isArray(out) ? out[0] : out; }
+          if (isHeic(f)) {
+            if (typeof heic2any === "undefined") { setStatus("The HEIC converter didn’t load — open this file in Chrome or Edge (not VS Code) and check your connection. Skipped “" + f.name + "”.", "err"); continue; }
+            setStatus("Converting “" + f.name + "”…", "");
+            var out = await heic2any({ blob: f, toType: "image/jpeg", quality: 0.9 });
+            src = Array.isArray(out) ? out[0] : out;
+          }
           var url = await downscale(src);
           gallery.push({ file_name: f.name, media_kind: "image", data_url: url, storage_path: null });
           renderGallery(); setStatus("", "");
