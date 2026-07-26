@@ -63,9 +63,17 @@
   .thumb .cap { font-size: 10px; color: #8a8078; margin-top: 3px; word-break: break-all; text-align: center; }
   .thumb .rm { position: absolute; top: -8px; right: -8px; width: 22px; height: 22px; border-radius: 50%; background: #c0392b; color: #fff; border: 2px solid #fff; font-size: 13px; line-height: 1; cursor: pointer; padding: 0; }
   .gallery:empty::after { content: "No photos yet."; color: #a89f95; font-size: 12.5px; }
+  .thumb img { cursor: zoom-in; }
+  .lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.85); display: none; align-items: center; justify-content: center; z-index: 1000; cursor: zoom-out; }
+  .lightbox.open { display: flex; }
+  .lightbox img { max-width: 92vw; max-height: 92vh; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,.5); cursor: default; }
+  .lightbox .lb-close { position: fixed; top: 12px; right: 18px; font-size: 32px; line-height: 1; color: #fff; background: none; border: none; cursor: pointer; padding: 4px 10px; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
 <script>if (typeof heic2any === "undefined") { var s = document.createElement("script"); s.src = "https://unpkg.com/heic2any@0.0.4/dist/heic2any.min.js"; document.head.appendChild(s); }</script>
+<script type="module">
+  try { const m = await import("https://esm.sh/heic-to@1.5.2"); window.__heicTo = m.heicTo; } catch (e) { console.warn("heic-to failed to load", e); }
+</script>
 </head>
 <body>
 <div class="wrap">
@@ -177,6 +185,8 @@
   </div>
 </div>
 
+<div class="lightbox" id="lightbox"><button type="button" class="lb-close" id="lb_close" aria-label="Close">×</button><img id="lb_img" alt=""></div>
+
 <script>
 (function () {
   var SUP = "https://wrhogwcpzlakobovqnwm.supabase.co";
@@ -250,6 +260,8 @@
   }
   var gallery = []; // [{ file_name, data_url }]
   function publicUrl(path) { return STORAGE + "/object/public/" + BUCKET + "/" + path; }
+  function openLightbox(src) { if (!src) return; $("lb_img").src = src; $("lightbox").classList.add("open"); }
+  function closeLightbox() { $("lightbox").classList.remove("open"); $("lb_img").removeAttribute("src"); }
   function renderGallery() {
     var g = $("gallery"); g.innerHTML = "";
     gallery.forEach(function (p, idx) {
@@ -257,7 +269,7 @@
       if (p.media_kind === "video" && p.storage_path) {
         var vd = document.createElement("video"); vd.src = publicUrl(p.storage_path); vd.controls = true; vd.preload = "metadata"; vd.className = "vid"; d.appendChild(vd);
       } else if (p.data_url) {
-        var im = document.createElement("img"); im.src = p.data_url; im.alt = p.file_name || ""; d.appendChild(im);
+        var im = document.createElement("img"); im.src = p.data_url; im.alt = p.file_name || ""; im.title = "Click to enlarge"; im.onclick = function () { openLightbox(p.data_url); }; d.appendChild(im);
       } else {
         var box = document.createElement("div"); box.className = "ph"; box.textContent = (p.file_name || "photo") + (p.media_kind === "video" ? " (video)" : ""); d.appendChild(box);
       }
@@ -300,6 +312,18 @@
     }
     return path;
   }
+  async function convertHeic(file) {
+    var errs = [];
+    if (window.__heicTo) {
+      try { return await window.__heicTo({ blob: file, type: "image/jpeg", quality: 0.9 }); }
+      catch (e) { errs.push("heic-to: " + ((e && e.message) || e)); }
+    }
+    if (typeof heic2any !== "undefined") {
+      try { var o = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.9 }); return Array.isArray(o) ? o[0] : o; }
+      catch (e) { errs.push("heic2any: " + ((e && e.message) || e)); }
+    }
+    throw new Error("this HEIC couldn’t be converted in the browser — save it as JPEG first (open it in Windows Photos → ⋯ → Save as, or set the iPhone camera to “Most Compatible”). [" + errs.join(" / ") + "]");
+  }
   async function handleFiles(files) {
     for (var i = 0; i < files.length; i++) {
       var f = files[i];
@@ -313,10 +337,9 @@
         } else {
           var src = f;
           if (isHeic(f)) {
-            if (typeof heic2any === "undefined") { setStatus("The HEIC converter didn’t load — open this file in Chrome or Edge (not VS Code) and check your connection. Skipped “" + f.name + "”.", "err"); continue; }
+            if (typeof heic2any === "undefined" && !window.__heicTo) { setStatus("The HEIC converter didn’t load — open this file in Chrome or Edge (not VS Code) and check your connection. Skipped “" + f.name + "”.", "err"); continue; }
             setStatus("Converting “" + f.name + "”…", "");
-            var out = await heic2any({ blob: f, toType: "image/jpeg", quality: 0.9 });
-            src = Array.isArray(out) ? out[0] : out;
+            src = await convertHeic(f);
           }
           var url = await downscale(src);
           gallery.push({ file_name: f.name, media_kind: "image", data_url: url, storage_path: null });
@@ -427,14 +450,18 @@
     setStatus("", "");
     currentId = null; currentRow = null;
     if (next === "add") { skuManual = false; fillBlank(); suggestSku(); $("fields").classList.remove("locked"); $("save").disabled = false; }
-    else { fillBlank(); $("fields").classList.add("locked"); $("save").disabled = true; $("picker").value = ""; if ($("picker").options.length <= 1) loadList(); }
+    else { fillBlank(); $("fields").classList.add("locked"); $("save").disabled = true; $("picker").value = ""; if ($("picker").options.length <= 1) loadList(); setStatus("Choose a piece from “Piece to edit” above — then you can change fields and attach photos/videos.", ""); }
   }
 
   $("tab-add").addEventListener("click", function () { setMode("add"); });
   $("tab-edit").addEventListener("click", function () { setMode("edit"); });
   $("item_type_code").addEventListener("change", function () { if (mode === "add") { skuManual = false; suggestSku(); } });
   $("sku").addEventListener("input", function () { skuManual = true; });
-  $("photo_input").addEventListener("change", function () { handleFiles(this.files); this.value = ""; });
+  $("photo_input").addEventListener("change", function () { var fs = Array.prototype.slice.call(this.files); this.value = ""; handleFiles(fs); });
+  $("lightbox").addEventListener("click", closeLightbox);
+  $("lb_close").addEventListener("click", function (e) { e.stopPropagation(); closeLightbox(); });
+  $("lb_img").addEventListener("click", function (e) { e.stopPropagation(); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeLightbox(); });
   $("picker").addEventListener("change", function () { if (this.value) { $("fields").classList.remove("locked"); loadPiece(this.value); } else { $("fields").classList.add("locked"); $("save").disabled = true; } });
   $("secondary").addEventListener("click", function () {
     if (mode === "add") { skuManual = false; fillBlank(); suggestSku(); setStatus("", ""); }
